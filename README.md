@@ -34,7 +34,7 @@ Before running the script, ensure the following:
    .\customize_firstrun.ps1
    ```
 
-# **Switch Configuratie Automatiseringsscript layer 2 & 3**
+# Switch Configuratie Automatiseringsscript layer 2 & 3
 
 Dit Python-script automatiseert het configureren van netwerk-switches door gebruik te maken van gegevens uit een CSV-bestand. Het configureert VLAN's (zowel Layer-2 als Layer-3), trunk-poorten, management-IP's en andere instellingen. Het ondersteunt ook het downloaden van configuratiebestanden naar een TFTP-server.
 
@@ -111,3 +111,84 @@ Pas de volgende variabelen in het script aan:
 ### **4. Logs**
 
 Controleer de logbestanden (**`switch_config.log`**) voor fouten en statusupdates.
+
+---
+
+# Shelly Smart Plug Configurator
+
+Dit Python-script configureert Shelly Smart Plugs die in AP-modus staan, door via hun lokale netwerk een aantal instellingen te wijzigen. Het script kan verschillende configuraties toepassen, zoals het instellen van de naam, de relaisstatus, MQTT-instellingen, Wi-Fi-instellingen en nog veel meer.
+
+## Functies van het Script
+
+- **Configureren van de Shelly Smart Plug**: Het script configureert de Shelly plug met een specifieke naam, relaisstatus, MQTT-instellingen en andere vereiste parameters.
+- **Wi-Fi Configuratie**: Verbindt de Shelly plug met een opgegeven Wi-Fi-netwerk.
+- **MQTT**: Stelt de plug in om gegevens via een MQTT-broker te verzenden.
+- **Cloud Configuratie**: Schakelt de cloudverbinding in of uit, afhankelijk van de opgegeven argumenten.
+- **Scannen naar Shelly-apparaten**: Het script kan zoeken naar Shelly-apparaten in AP-modus binnen het lokale netwerk.
+
+## Benodigde Bestanden
+
+Het script leest de Wi-Fi-wachtwoorden uit een bestand genaamd **`password.txt`**. Dit bestand moet de tekst bevatten van het wachtwoord dat je wilt gebruiken om verbinding te maken met je Wi-Fi-netwerk.
+
+### Voorbeeld van `password.txt`:
+
+```
+JeWiFiWachtwoord
+```
+
+Zorg ervoor dat je dit bestand aanmaakt en in dezelfde directory plaatst als het script.
+
+## Benodigde Bibliotheken
+
+Dit script maakt gebruik van de volgende Python-pakketten:
+
+- `requests` - Voor het communiceren met de Shelly API.
+- `argparse` - Voor het verwerken van commandoregelargumenten.
+- `subprocess` - Voor het uitvoeren van systeemcommando's (zoals het verbinden met Wi-Fi).
+- `time` - Voor wachttijden tussen acties.
+
+Installeer de benodigde bibliotheken met pip:
+
+```bash
+pip install requests
+```
+
+## Commandoregelargumenten
+
+Het script accepteert de volgende argumenten via de commandoregel:
+
+- `-family` (vereist): De familienaam die aan de plug wordt toegewezen.
+- `-first_name` (vereist): De voornaam die aan de plug wordt toegewezen.
+- `-cloud` (optie): Schakelt de cloudverbinding in voor de plug (standaard is dit uitgeschakeld).
+- `-mqtt_broker` (optie): Het IP-adres van de MQTT-broker (standaard is `172.23.83.254`).
+
+### Voorbeeld van het gebruik van het script
+
+Om het script uit te voeren, gebruik je het volgende commando:
+
+```bash
+python configure_shelly.py --family "Achternaam" --first_name "Voornaam" --cloud --mqtt_broker "172.23.83.254
+```
+
+Dit zal de Shelly-plug configureren met de naam `Achternaam-Voornaam-Outlet1` en de cloudverbinding inschakelen, terwijl de MQTT-broker wordt ingesteld op `172.23.83.254`.
+
+## Werking
+
+1. **Verbinding maken met de Shelly Plug**: Het script zoekt naar beschikbare Shelly-apparaten in AP-modus via Wi-Fi en verbindt zich automatisch met het juiste apparaat.
+2. **Configuratie van de Shelly Plug**: Nadat de verbinding is gemaakt, configureert het script de plug door de opgegeven instellingen toe te passen (zoals de naam, MQTT-configuratie, Wi-Fi-instellingen, enzovoort).
+3. **Wachtwoord**: Het script leest het Wi-Fi-wachtwoord uit de **`password.txt`**file en gebruikt dit om verbinding te maken met het netwerk.
+
+## Opmerkingen
+
+- Zorg ervoor dat je de juiste Wi-Fi-netwerkinstellingen hebt (SSID en wachtwoord) en dat je toegang hebt tot de Shelly plug in AP-modus.
+- Het IP-adres van de Shelly-plug in AP-modus is standaard `192.168.33.1`. Het script gebruikt dit IP-adres voor de configuratie.
+- Het script maakt gebruik van `netsh` om Wi-Fi-profielen toe te voegen en verbinding te maken met de Shelly-plug. Dit werkt alleen op Windows-systemen.
+
+## Problemen oplossen
+
+- **Geen Shelly-plug gevonden**: Het script kan de plug mogelijk niet vinden als deze niet in AP-modus staat of als er een probleem is met de Wi-Fi-configuratie.
+- **Verbindingsproblemen**: Controleer of je apparaat verbonden is met hetzelfde netwerk en dat er geen firewalls of netwerkbeperkingen zijn die de communicatie met de Shelly-plug blokkeren.
+
+## Licentie
+
+Dit project is beschikbaar onder de MIT-licentie. Zie het bestand `LICENSE` voor meer informatie.

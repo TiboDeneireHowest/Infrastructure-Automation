@@ -175,8 +175,8 @@ if __name__ == "__main__":
     tftp_thread.start()
 
     csv_file = 'BST-D-1-242.csv'  # Pad naar je CSV-bestand
-    username = 'admin'  # SSH gebruikersnaam (met admin-rechten)
-    password = 'Tibo1234!'  # SSH wachtwoord
+    username = 'username'  # SSH gebruikersnaam (met admin-rechten)
+    password = 'password'  # SSH wachtwoord
     secret = 'secret'  # Enable wachtwoord
     tftp_server_ip = '192.168.1.2'  # IP-adres van de TFTP-server
     

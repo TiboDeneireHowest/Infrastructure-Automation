@@ -9,26 +9,14 @@ import tftpy
 
 # Configuratie van logging
 logging.basicConfig(
-    filename='switch_config.log',  # Logbestandnaam
-    level=logging.DEBUG,  # Minimum loggingniveau (DEBUG voor alles)
-    format='%(asctime)s - %(levelname)s - %(message)s',  # Logformaat
+    filename='switch_config.log',
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
 )
 
-# Zet het pad voor het TFTP-downloadpad in
-TFTP_DIR = 'tftp'
-
-# Zorg ervoor dat de map bestaat
-if not os.path.exists(TFTP_DIR):
-    os.makedirs(TFTP_DIR)
-
-# Zet de TFTP-server op
-def start_tftp_server():
-    print("Starting TFTP server...")
-    server = tftpy.TftpServer(TFTP_DIR)
-    server.listen('0.0.0.0', 69)  # Luistert op alle interfaces, poort 69 voor TFTP
-
-# Functie om verbinding te maken met de switch
+# Functie voor verbinden met de switch
 def connect_to_switch(ip, username, password, secret):
+    """Verbind met de switch en retourneer een actieve sessie."""
     try:
         logging.info(f'Verbinden met switch: {ip}')
         device = {
@@ -39,146 +27,132 @@ def connect_to_switch(ip, username, password, secret):
             'secret': secret,
         }
         connection = ConnectHandler(**device)
-        connection.enable()  # Ga naar de enable modus
+        connection.enable()
         logging.info(f'Verbinding met switch {ip} is succesvol!')
         return connection
     except Exception as e:
         logging.error(f'Fout bij verbinden met switch {ip}: {e}')
         raise
 
-# Functie om Layer-2 VLAN te configureren
-def configure_layer2_vlan(vlan, description, ports):
-    logging.info(f'Configureren Layer-2 VLAN {vlan} met beschrijving "{description}"')
-    config_commands = []
-
-    # Controleer of VLAN bestaat en maak het indien nodig aan
-    config_commands.append(f'vlan {vlan}')
-    config_commands.append(f'name {description}')
-    
-    # Splits de poorten en configureer deze
-    for port in ports.split('-'):
-        config_commands.append(f'interface {port}')
-        config_commands.append('switchport mode access')
-        config_commands.append(f'switchport access vlan {vlan}')
-
-    logging.debug(f'Layer-2 VLAN configuratie commando\'s: {config_commands}')
-    return config_commands
-
-# Functie om Layer-3 VLAN te configureren
-def configure_layer3_vlan(vlan, description, ip_address, subnetmask):
-    logging.info(f'Configureren Layer-3 VLAN {vlan} met IP {ip_address}/{subnetmask}')
+# Functie voor VLAN-configuratie
+def configure_vlan_and_ports(connection, vlan, description, ip_address, netmask, ports, ip_routing):
+    """Configureer VLAN en poorten op de switch."""
     config_commands = [
         f'vlan {vlan}',
         f'name {description}',
-        f'interface vlan {vlan}',
-        f'ip address {ip_address} {subnetmask}',
-        'no shutdown',  # Zorg ervoor dat de interface aan staat
     ]
-    logging.debug(f'Layer-3 VLAN configuratie commando\'s: {config_commands}')
-    return config_commands
+    if ip_address and netmask:  # Layer-3 VLAN
+        config_commands.extend([
+            f'interface vlan {vlan}',
+            f'ip address {ip_address} {netmask}',
+            'no shutdown',
+        ])
+    else:  # Layer-2 VLAN
+        config_commands.extend([
+            f'interface vlan {vlan}',
+            'no shutdown',
+        ])
 
-# Functie om de default gateway in te stellen
-def configure_gateway(gateway_ip):
-    logging.info(f'Instellen van default gateway: {gateway_ip}')
-    return [f'ip default-gateway {gateway_ip}']
+    if ports:
+        if "-" in ports:
+            start_port, end_port = map(int, ports.split("-"))
+            for port in range(start_port, end_port + 1):
+                config_commands.extend([
+                    f'interface FastEthernet0/{port}',
+                    'switchport mode access',
+                    f'switchport access vlan {vlan}',
+                    'no shutdown',
+                ])
+        else:
+            config_commands.extend([
+                f'interface FastEthernet0/{ports}',
+                'switchport mode access',
+                f'switchport access vlan {vlan}',
+                'no shutdown',
+            ])
 
-# Functie om de management VLAN IP te configureren
-def configure_management_ip(ip_address, subnetmask):
-    logging.info(f'Configureren van management IP {ip_address}/{subnetmask}')
-    return [
-        'interface vlan 1',  # Typisch is VLAN 1 het management VLAN
-        f'ip address {ip_address} {subnetmask}',
-        'no shutdown',
-    ]
+    if "trunk" in description.lower() or "uplink" in description.lower():
+        config_commands.extend([
+            'interface range FastEthernet0/1 - 24',
+            'switchport mode trunk',
+            f'switchport trunk allowed vlan {vlan}',
+        ])
 
-# Functie om VLAN filtering in trunk poorten in te stellen
-def configure_trunk(ports, vlan_filtering):
-    logging.info(f'Configureren van trunk-poorten: {ports} met VLAN filtering: {vlan_filtering}')
-    config_commands = []
-    for port in ports.split(','):
-        config_commands.append(f'interface {port}')
-        config_commands.append('switchport mode trunk')
-        config_commands.append(f'switchport trunk allowed vlan {vlan_filtering}')
-    logging.debug(f'Trunk configuratie commando\'s: {config_commands}')
-    return config_commands
+    if ip_routing:
+        config_commands.append('ip routing')
 
-# Functie om TFTP-server te starten en configuratie te downloaden
-def start_tftp_and_download_config(connection, tftp_server_ip, filename):
-    logging.info(f'Configureren van TFTP-server voor configuratiedownload: {tftp_server_ip}/{filename}')
+    # Voer de configuratie uit
+    logging.info(f'Uitvoeren van configuratiecommando\'s: {config_commands}')
+    connection.send_config_set(config_commands)
+    logging.info('Configuratie voltooid!')
+
+# Functie om TFTP-server te starten
+def start_tftp_server(tftp_root):
+    """Start een TFTP-server."""
+    if not os.path.exists(tftp_root):
+        os.makedirs(tftp_root)
+
+    server = tftpy.TftpServer(tftp_root)
+    server_thread = threading.Thread(target=server.listen, kwargs={'listenip': '0.0.0.0', 'listenport': 69})
+    server_thread.daemon = True
+    server_thread.start()
+    logging.info(f'TFTP-server gestart en luistert in {tftp_root}')
+
+# Functie om configuratie te downloaden via TFTP
+def download_switch_config(connection, tftp_server_ip, filename):
+    """Download de configuratie van de switch naar een TFTP-server."""
     try:
         connection.send_command(f'copy running-config tftp://{tftp_server_ip}/{filename}', expect_string=r'#')
         logging.info(f'Configuratie succesvol gedownload naar TFTP-server: {tftp_server_ip}/{filename}')
     except Exception as e:
-        logging.error(f'Fout bij het downloaden van de configuratie naar TFTP-server: {e}')
+        logging.error(f'Fout bij het downloaden van de configuratie: {e}')
 
-# CSV-bestand inlezen en configureren
-def configure_switch_from_csv(csv_file, username, password, secret, tftp_server_ip):
-    try:
-        with open(csv_file, mode='r') as file:
-            csv_reader = csv.DictReader(file, delimiter=';')  # Gebruik puntkomma als scheidingsteken
-            logging.info(f'Starten met configureren van switches uit CSV-bestand: {csv_file}')
+# Functie voor het configureren van switches op basis van CSV
+def configure_switch(csv_file, username, password, secret, tftp_server_ip, tftp_root):
+    """Lees een CSV-bestand en configureer switches."""
+    with open(csv_file, mode="r") as file:
+        csv_reader = csv.DictReader(file, delimiter=";")
+        data = list(csv_reader)
 
-            for row in csv_reader:
-                try:
-                    vlan = row['Vlan'].strip()
-                    description = row['Description'].strip()
-                    ip_address = row.get('IP Address', '').strip()
-                    subnetmask = row.get('Netmask', '').strip()
-                    ports = row.get('Ports', '').strip()
-                    switch_id = row['Switch'].strip()
-                    vlan_filtering = row.get('vlan filtering', '').strip()
+    ip_routing = any(row["IP Address"] for row in data)
 
-                    # IP-adres van de switch instellen
-                    switch_ip = f"192.168.1.{switch_id}"
+    start_tftp_server(tftp_root)
 
-                    # Maak verbinding met de switch
-                    connection = connect_to_switch(switch_ip, username, password, secret)
+    for row in data:
+        vlan = row["Vlan"]
+        description = row["Description"]
+        ip_address = row["IP Address"]
+        netmask = row["Netmask"]
+        switch_ip = row["Switch"]
+        ports = row["Ports"]
 
-                    # Configureer VLAN afhankelijk van de aanwezigheid van IP-gegevens
-                    all_config_commands = []
-                    if ip_address and subnetmask:  # Layer-3 VLAN
-                        all_config_commands.extend(configure_layer3_vlan(vlan, description, ip_address, subnetmask))
-                    else:  # Layer-2 VLAN
-                        all_config_commands.extend(configure_layer2_vlan(vlan, description, ports))
+        switch_host = f"192.168.1.{switch_ip}"
 
-                    # Configureer management VLAN en gateway indien van toepassing
-                    if 'management' in description.lower():
-                        all_config_commands.extend(configure_management_ip(ip_address, subnetmask))
-                        gateway_ip = ip_address.rsplit('.', 1)[0] + '.1'
-                        all_config_commands.extend(configure_gateway(gateway_ip))
+        try:
+            # Maak verbinding met de switch
+            connection = connect_to_switch(switch_host, username, password, secret)
 
-                    # Trunk configuratie (indien nodig)
-                    if vlan_filtering:
-                        all_config_commands.extend(configure_trunk(ports, vlan_filtering))
+            # Configureer VLAN en poorten
+            configure_vlan_and_ports(connection, vlan, description, ip_address, netmask, ports, ip_routing)
 
-                    # Verstuur configuratie naar de switch
-                    connection.send_config_set(all_config_commands)
-                    logging.info(f'Configuratie succesvol uitgevoerd op switch {switch_ip}')
+            # Download configuratie naar TFTP-server
+            filename = f'switch_{switch_ip}_config.cfg'
+            download_switch_config(connection, tftp_server_ip, filename)
 
-                    # Start TFTP-server en download configuratie
-                    start_tftp_and_download_config(connection, tftp_server_ip, f'switch_config_{switch_id}.cfg')
+            # Sluit de verbinding met de switch
+            connection.disconnect()
+            logging.info(f'Verbinding met switch {switch_host} afgesloten.')
 
-                    # Sluit de verbinding met de switch
-                    connection.disconnect()
-                    logging.info(f'Verbinding met switch {switch_ip} afgesloten')
-
-                except Exception as e:
-                    logging.error(f'Fout bij configureren van switch met ID {switch_id}: {e}')
-
-    except Exception as e:
-        logging.error(f'Fout bij het verwerken van het CSV-bestand: {e}')
+        except Exception as e:
+            logging.error(f'Fout bij configureren van switch {switch_host}: {e}')
 
 # Hoofdfunctie
 if __name__ == "__main__":
-    # Start TFTP-server in een aparte thread
-    tftp_thread = threading.Thread(target=start_tftp_server, daemon=True)
-    tftp_thread.start()
-
     csv_file = 'BST-D-1-242.csv'  # Pad naar je CSV-bestand
-    username = 'username'  # SSH gebruikersnaam (met admin-rechten)
-    password = 'password'  # SSH wachtwoord
+    username = 'admin'  # SSH gebruikersnaam (met admin-rechten)
+    password = 'Tibo1234!'  # SSH wachtwoord
     secret = 'secret'  # Enable wachtwoord
     tftp_server_ip = '192.168.1.2'  # IP-adres van de TFTP-server
-    
-    # Start de configuratie
-    configure_switch_from_csv(csv_file, username, password, secret, tftp_server_ip)
+    tftp_root = 'tftp'  # Pad voor TFTP-bestanden
+
+    configure_switch(csv_file, username, password, secret, tftp_server_ip, tftp_root)
